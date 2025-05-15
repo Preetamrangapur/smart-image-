@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Smart Data Capture</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      background: linear-gradient(to bottom right, #e0f7fa, #e1bee7);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    .container {
+      background-color: #ffffff;
+      padding: 25px;
+      border-radius: 20px;
+      box-shadow: 0px 5px 20px rgba(0, 0, 0, 0.2);
+      text-align: center;
+      max-width: 90vw;
+    }
+
+    h2 {
+      margin-bottom: 20px;
+      color: #4a148c;
+    }
+
+    input[type="file"] {
+      margin-bottom: 15px;
+    }
+
+    .btn {
+      margin: 8px;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: bold;
+      background: #7b1fa2;
+      color: white;
+      border: none;
+      border-radius: 30px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    .btn:hover {
+      background: #4a148c;
+    }
+
+    video, canvas {
+      margin-top: 10px;
+      max-width: 300px;
+      border-radius: 12px;
+      display: none;
+    }
+
+    #output, #voiceResult {
+      margin-top: 20px;
+      background-color: #f0f0f0;
+      padding: 12px;
+      border-radius: 10px;
+      width: 90%;
+      max-width: 400px;
+      text-align: left;
+      white-space: pre-wrap;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Smart Data Capture</h2>
+    <input type="file" id="imageInput" accept="image/*"><br>
+
+    <button class="btn" onclick="uploadImage()">📤 Upload Image</button>
+    <button class="btn" onclick="startVoice()">🎤 Voice Input</button>
+    <button class="btn" onclick="startCamera()">📷 Open Camera</button>
+    <button class="btn" onclick="closeCamera()">📴 Close Camera</button>
+    <button class="btn" onclick="takePhoto()">📸 Capture Photo</button>
+
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+
+    <div id="voiceResult"></div>
+    <pre id="output"></pre>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
+
+    async function uploadImage() {
+      const input = document.getElementById('imageInput');
+      const file = input.files[0];
+      if (!file) return alert("Please select an image.");
+
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch('/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await response.json();
+      document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+    }
+
+    function startVoice() {
+      try {
+        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.lang = 'en-US';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        recognition.onresult = async function(event) {
+          const text = event.results[0][0].transcript;
+          document.getElementById('voiceResult').innerText = "You said: " + text;
+
+          const response = await fetch('/voice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+          });
+
+          const data = await response.json();
+          document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+        };
+
+        recognition.onerror = function(event) {
+          alert("Voice recognition error: " + event.error);
+        };
+
+        recognition.start();
+      } catch (e) {
+        alert("Speech Recognition not supported on this device.");
+      }
+    }
+
+    function startCamera() {
+      video.style.display = 'block';
+      canvas.style.display = 'none';
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => {
+          video.srcObject = stream;
+        })
+        .catch(err => alert("Camera error: " + err));
+    }
+
+    function closeCamera() {
+      if (video.srcObject) {
+        const tracks = video.srcObject.getTracks();
+        tracks.forEach(track => track.stop());
+        video.srcObject = null;
+      }
+      video.style.display = 'none';
+      canvas.style.display = 'none';
+    }
+
+    async function takePhoto() {
+      if (!video.srcObject) return alert("Camera is not active.");
+
+      canvas.style.display = 'block';
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(async function(blob) {
+        const formData = new FormData();
+        formData.append('image', blob, 'camera.jpg');
+
+        const response = await fetch('/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+        document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+      }, 'image/jpeg');
+    }
+  </script>
+</body>
+</html>
